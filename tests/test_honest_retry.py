@@ -220,6 +220,22 @@ def test_a_body_that_can_be_read_only_once_is_refused_before_sending(client, bod
     assert seen == []
 
 
+def test_a_data_iterator_is_refused_too(client):
+    # Regression for 0.2.1: httpx sends a non-dict data= as raw content, so
+    # data=<generator> slipped past the check; a retried PUT went out empty
+    # and the call still reported "done".
+    with server("hangup") as (url, seen):
+        with pytest.raises(TypeError, match="data="):
+            send(client, "PUT", url, data=_chunks(), attempts=3, backoff=0)
+    assert seen == []
+
+
+def test_form_data_can_still_be_retried(client):
+    with server("hangup") as (url, seen):
+        result = send(client, "PUT", url, data={"amount": "10"}, attempts=2, backoff=0)
+    assert (result.attempts, len(seen)) == (2, 2)
+
+
 def test_a_non_seekable_file_upload_is_refused_when_retries_are_possible(client):
     class Pipe(io.RawIOBase):  # readable, not seekable, like a socket or a pipe
         def readable(self):

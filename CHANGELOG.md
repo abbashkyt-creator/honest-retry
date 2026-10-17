@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.2 (2026-10-17)
+
+- **Fixed: `data=<iterator>` slipped past the one-shot check.** httpx 0.28 still sends a `data=` that is not a dict
+  as raw content. A retried PUT with `data=<generator>` went out empty, and the call reported `done`. `data=` is now
+  checked like `content=`: bytes, str or a form dict pass; anything else is refused when `attempts` is above 1. Test:
+  `test_a_data_iterator_is_refused_too` (fails on 0.2.1); `test_form_data_can_still_be_retried`.
+- **Changed:** `bytearray` and `memoryview` bodies are no longer treated as safe. httpx 0.28 cannot send them.
+
 ## 0.2.1 (2026-10-17)
 
 Bugs found in review of 0.2.0. Each one has a test that fails on 0.2.0 and passes now.

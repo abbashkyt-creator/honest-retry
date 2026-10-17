@@ -29,6 +29,7 @@ import email.utils
 import random
 import time
 import uuid
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Callable, Literal
@@ -36,7 +37,7 @@ from typing import Any, Callable, Literal
 import httpx
 
 __all__ = ["send", "Result", "IDEMPOTENT_METHODS"]
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 
 Outcome = Literal["done", "not_sent", "rejected", "unconfirmed"]
 
@@ -104,15 +105,17 @@ def _retry_after(response: httpx.Response | None) -> float | None:
 
 
 def _one_shot_body(kwargs: dict) -> str | None:
-    """Name the argument whose body can be read only once, if any.
+    """Name the argument whose body may not survive a second attempt, if any.
 
     httpx reads an iterator, generator or file body as it sends it. A second
     attempt finds it empty: a generator goes out as an empty chunked body, a
     file fails halfway with too little data for its Content-Length.
     """
-    content = kwargs.get("content")
-    if content is not None and not isinstance(content, (bytes, bytearray, memoryview, str)):
-        return "content"
+    for name in ("content", "data"):  # httpx 0.28 still sends a non-dict data= as raw content
+        body = kwargs.get(name)
+        if body is None or isinstance(body, (bytes, str)) or (name == "data" and isinstance(body, Mapping)):
+            continue
+        return name
     files = kwargs.get("files") or {}
     for value in files.values() if isinstance(files, dict) else (v for _, v in files):
         file = value[1] if isinstance(value, tuple) else value
@@ -152,8 +155,8 @@ def send(
     one_shot = _one_shot_body(kwargs)
     if one_shot and attempts > 1:
         raise TypeError(
-            f"{one_shot}= can be sent only once, so it cannot be retried: "
-            "pass the body as bytes, or use attempts=1"
+            f"{one_shot}= must be bytes or str to be retried (an iterator, generator or "
+            "file is read once, so a retry would send it empty): pass bytes, or use attempts=1"
         )
     method = method.upper()
     headers = httpx.Headers(kwargs.pop("headers", None))
