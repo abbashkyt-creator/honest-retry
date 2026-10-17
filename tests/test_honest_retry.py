@@ -45,6 +45,7 @@ ANSWERS = {
     "502": "502 Bad Gateway",
     "503": "503 Service Unavailable",
     "504": "504 Gateway Timeout",
+    "307": "307 Temporary Redirect",
 }
 
 
@@ -252,6 +253,18 @@ def test_a_body_that_can_be_read_only_once_is_sent_with_one_attempt(client):
     with server("200") as (url, seen):
         result = send(client, "PUT", url, content=_chunks(), attempts=1)
     assert (result.outcome, len(seen)) == ("done", 1)
+
+
+def test_a_redirect_loop_followed_by_httpx_is_unconfirmed_not_raised():
+    # Regression for 0.2.2 (round-6 review): with follow_redirects=True httpx
+    # itself re-sent the POST on every 307, then raised TooManyRedirects, and
+    # send() raised it instead of returning an outcome.
+    with httpx.Client(timeout=2.0, follow_redirects=True) as following, \
+            server("307", "Location: /\r\n") as (url, seen):
+        result = send(following, "POST", url, json={}, attempts=3, backoff=0)
+    assert (result.outcome, result.attempts) == ("unconfirmed", 1)
+    assert isinstance(result.error, httpx.TooManyRedirects)
+    assert len(seen) > 1  # httpx re-sent it: what the README warns about
 
 
 def test_success_is_done(client):

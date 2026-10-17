@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.3 (2026-10-17)
+
+A bug found in review of 0.2.2, with a test that fails on 0.2.2 and passes now.
+
+- **Fixed: a redirect loop raised instead of returning an outcome.** With `follow_redirects=True`, httpx re-sent the
+  POST on every 307 and then raised `TooManyRedirects`, which `send()` passed on to the caller. It is now
+  `unconfirmed`: the request reached the server, maybe many times. Test:
+  `test_a_redirect_loop_followed_by_httpx_is_unconfirmed_not_raised`.
+- **Docs:** `follow_redirects` re-sends requests out of this library's sight.
+
 ## 0.2.2 (2026-10-17)
 
 A bug found in review of 0.2.1, with a test that fails on 0.2.1 and passes now.

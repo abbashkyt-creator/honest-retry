@@ -37,6 +37,8 @@ The outcome describes the whole call, not just the last attempt. If attempt 1 ma
 
 A retry needs a body that can be sent twice. An iterator, generator or file passed as `content=` or `data=` (httpx sends a `data=` that is not a dict as raw content), or a non-seekable file in `files=`, is read as it is sent, so a second attempt would find it empty. With `attempts` above 1, `send` refuses such a body with a `TypeError` before sending anything. Pass bytes, a form dict, or use `attempts=1`.
 
+httpx's `follow_redirects=True` re-sends a request on a 307 or 308 by itself, out of this library's sight: a POST can reach the server several times inside one attempt. A redirect loop that ends in `TooManyRedirects` is reported as `unconfirmed`. For requests that must not be repeated, use a client without `follow_redirects`.
+
 Programming errors, such as an unsupported URL scheme, are raised, not classified.
 
 ## Why

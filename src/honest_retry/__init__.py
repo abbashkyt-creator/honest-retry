@@ -37,7 +37,7 @@ from typing import Any, Callable, Literal
 import httpx
 
 __all__ = ["send", "Result", "IDEMPOTENT_METHODS"]
-__version__ = "0.2.2"
+__version__ = "0.2.3"
 
 Outcome = Literal["done", "not_sent", "rejected", "unconfirmed"]
 
@@ -53,6 +53,7 @@ _MAYBE_SENT_ERRORS = (
     httpx.WriteError,
     httpx.RemoteProtocolError,
     httpx.DecodingError,
+    httpx.TooManyRedirects,  # httpx itself re-sent the request on each redirect
 )
 
 

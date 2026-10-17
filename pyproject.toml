@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "honest-retry"
-version = "0.2.2"
+version = "0.2.3"
 description = "Retry HTTP requests only when it is safe: never replay a POST that may already have been received."
 readme = "README.md"
 license = { text = "MIT" }
