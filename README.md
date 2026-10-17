@@ -1,6 +1,6 @@
 # honest-retry
 
-Retry HTTP requests only when it is safe, and say honestly what happened.
+Retry HTTP requests only when it is safe, and report whether the server may have acted on them.
 
 When an HTTP request fails, that doesn't always mean it didn't happen. If the connection was refused, nothing was sent, and retrying is safe. If the connection dropped *after* the request went out, the server may already have acted on it. Retrying a POST then charges, orders or bids twice.
 
@@ -15,7 +15,7 @@ with httpx.Client(timeout=10) as client:
 
 if result.outcome == "done":
     handle(result.response)               # the server answered; act on its status
-elif result.outcome == "not_sent":
+elif result.outcome in ("not_sent", "rejected"):
     show("Did not go through. Safe to try again.")
 else:  # "unconfirmed"
     show("Not confirmed. Check before trying again.")
@@ -25,13 +25,15 @@ else:  # "unconfirmed"
 
 | What happened | Outcome | GET / PUT / DELETE | POST / PATCH |
 |---|---|---|---|
-| Connection refused, DNS failure, connect timeout, no free pooled connection | `not_sent` | retried | retried |
-| 429 Too Many Requests | `not_sent` | retried | retried |
-| Reset or hang-up after sending, read/write timeout | `unconfirmed` | retried | **not retried** |
+| Connection refused, DNS failure, connect timeout, proxy failure, no free pooled connection | `not_sent` | retried | retried |
+| 429 Too Many Requests | `rejected` | retried after `Retry-After` (capped) | retried after `Retry-After` (capped) |
+| Reset or hang-up after sending, read/write timeout, unreadable answer | `unconfirmed` | retried | **not retried** |
 | 5xx | `unconfirmed` | retried | **not retried** |
 | Any other status | `done` | returned | returned |
 
-`idempotency_key=True` adds a random `Idempotency-Key` header and keeps it the same on every attempt. That lets a server which de-duplicates on the header, as payment APIs commonly do, receive a retried POST safely. With a key present, an `unconfirmed` POST is retried.
+The outcome describes the whole call, not just the last attempt. If attempt 1 may have reached the server and attempts 2 and 3 were refused, the result is `unconfirmed`, not `not_sent`.
+
+`idempotency_key=True` adds a random `Idempotency-Key` header and keeps it the same on every attempt. That lets a server which de-duplicates on the header, as payment APIs commonly do, receive a retried POST safely. The key is returned as `result.idempotency_key`, so your own later retry can reuse it. A key you set yourself, in any letter case, is kept. With a key present, an `unconfirmed` POST is retried.
 
 Programming errors, such as an unsupported URL scheme, are raised, not classified.
 
@@ -46,7 +48,9 @@ pip install -e ".[test]"
 pytest
 ```
 
-Every test talks to a real local socket: a refused port, a server that hangs up after reading the request, and servers that answer 503, 429 or 200. Each server counts the requests that actually reached it, so a claim like "not retried" is checked by the server, not by the library's own counters.
+Every test talks to a real local socket: a refused port, a server that hangs up after reading the request, one that goes silent, one that stops listening after the first request, and servers that answer 502, 503, 504, 429 or 200. Each server counts the requests that actually reached it, so a claim like "not retried" is checked by the server, not by the library's own counters.
+
+See [CHANGELOG.md](CHANGELOG.md) for the bugs fixed in 0.2.0. Each fix comes with a test that fails on 0.1.0.
 
 ## License
 
