@@ -2,6 +2,8 @@
 
 ## 0.2.2 (2026-10-17)
 
+A bug found in review of 0.2.1, with a test that fails on 0.2.1 and passes now.
+
 - **Fixed: `data=<iterator>` slipped past the one-shot check.** httpx 0.28 still sends a `data=` that is not a dict
   as raw content. A retried PUT with `data=<generator>` went out empty, and the call reported `done`. `data=` is now
   checked like `content=`: bytes, str or a form dict pass; anything else is refused when `attempts` is above 1. Test:
