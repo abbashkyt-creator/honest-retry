@@ -4,6 +4,7 @@ how many requests actually reached it, so "not retried" is proven by the
 server, not by the library's own bookkeeping."""
 from __future__ import annotations
 
+import io
 import socket
 import threading
 import time
@@ -24,11 +25,17 @@ def _read_request(conn: socket.socket) -> bytes:
         data += chunk
     head, _, body = data.partition(b"\r\n\r\n")
     length = 0
+    chunked = False
     for line in head.split(b"\r\n"):
         if line.lower().startswith(b"content-length:"):
             length = int(line.split(b":", 1)[1])
-    while len(body) < length:
-        body += conn.recv(65536)
+        if line.lower().replace(b" ", b"") == b"transfer-encoding:chunked":
+            chunked = True
+    while (b"0\r\n\r\n" not in body) if chunked else (len(body) < length):
+        chunk = conn.recv(65536)
+        if not chunk:
+            break
+        body += chunk
     return head
 
 
@@ -188,6 +195,47 @@ def test_retry_after_is_capped_by_max_wait(client):
     with server("429", "Retry-After: 3600\r\n") as (url, seen):
         send(client, "GET", url, attempts=2, backoff=0, max_wait=5, sleep=waits.append)
     assert waits == [5]
+
+
+def test_a_retry_after_that_is_not_ascii_digits_falls_back_to_backoff(client):
+    # Regression for 0.2.0: "²".isdigit() is True, and float("²") raised ValueError.
+    waits: list[float] = []
+    with server("429", "Retry-After: ²\r\n") as (url, seen):
+        result = send(client, "GET", url, attempts=2, backoff=0.5, jitter=0, sleep=waits.append)
+    assert (result.outcome, result.attempts, len(seen)) == ("rejected", 2, 2)
+    assert waits == [0.5]
+
+
+def _chunks():
+    yield b"bid=10"
+
+
+@pytest.mark.parametrize("body", [_chunks, lambda: io.BytesIO(b"bid=10")], ids=["generator", "file"])
+def test_a_body_that_can_be_read_only_once_is_refused_before_sending(client, body):
+    # Regression for 0.2.0: a retried PUT re-sent a generator body empty, and a
+    # file body raised halfway through the call.
+    with server("hangup") as (url, seen):
+        with pytest.raises(TypeError, match="content="):
+            send(client, "PUT", url, content=body(), attempts=3, backoff=0)
+    assert seen == []
+
+
+def test_a_non_seekable_file_upload_is_refused_when_retries_are_possible(client):
+    class Pipe(io.RawIOBase):  # readable, not seekable, like a socket or a pipe
+        def readable(self):
+            return True
+
+        def readinto(self, b):
+            return 0
+
+    with pytest.raises(TypeError, match="files="):
+        send(client, "PUT", "http://127.0.0.1:9/", files={"f": ("a.txt", Pipe())}, attempts=2)
+
+
+def test_a_body_that_can_be_read_only_once_is_sent_with_one_attempt(client):
+    with server("200") as (url, seen):
+        result = send(client, "PUT", url, content=_chunks(), attempts=1)
+    assert (result.outcome, len(seen)) == ("done", 1)
 
 
 def test_success_is_done(client):

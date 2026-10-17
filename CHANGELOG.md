@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.2.1 (2026-10-17)
+
+Bugs found in review of 0.2.0. Each one has a test that fails on 0.2.0 and passes now.
+
+- **Fixed: a retried request re-sent a streaming body empty.**
+  - httpx reads an iterator, generator or file body as it sends it. On a retried PUT, a generator body went out as an
+    empty chunked body. A file body failed halfway with `LocalProtocolError`, raised to the caller after the first
+    attempt may already have been received.
+  - With `attempts` above 1, such a body (and a non-seekable file in `files=`) is now refused with a `TypeError`
+    before anything is sent. `attempts=1` still sends it.
+  - Tests: `test_a_body_that_can_be_read_only_once_is_refused_before_sending` (generator and file),
+    `test_a_non_seekable_file_upload_is_refused_when_retries_are_possible`.
+- **Fixed: `Retry-After: ²` raised ValueError.** `"²".isdigit()` is True, but `float("²")` fails. Only ASCII digits
+  are read as seconds now; anything else that is not an HTTP date falls back to the backoff. Test:
+  `test_a_retry_after_that_is_not_ascii_digits_falls_back_to_backoff`.
+- **Tests:** the test server now reads chunked request bodies.
+
 ## 0.2.0 (2026-10-17)
 
 Bugs found in review of 0.1.0. Each one has a test that fails on 0.1.0 and passes now.

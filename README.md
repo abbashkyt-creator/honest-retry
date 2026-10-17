@@ -35,6 +35,8 @@ The outcome describes the whole call, not just the last attempt. If attempt 1 ma
 
 `idempotency_key=True` adds a random `Idempotency-Key` header and keeps it the same on every attempt. That lets a server which de-duplicates on the header, as payment APIs commonly do, receive a retried POST safely. The key is returned as `result.idempotency_key`, so your own later retry can reuse it. A key you set yourself, in any letter case, is kept. With a key present, an `unconfirmed` POST is retried.
 
+A retry needs a body that can be sent twice. An iterator, generator or file passed as `content=`, or a non-seekable file in `files=`, is read as it is sent, so a second attempt would find it empty. With `attempts` above 1, `send` refuses such a body with a `TypeError` before sending anything. Pass bytes, or use `attempts=1`.
+
 Programming errors, such as an unsupported URL scheme, are raised, not classified.
 
 ## Why
@@ -50,7 +52,11 @@ pytest
 
 Every test talks to a real local socket: a refused port, a server that hangs up after reading the request, one that goes silent, one that stops listening after the first request, and servers that answer 502, 503, 504, 429 or 200. Each server counts the requests that actually reached it, so a claim like "not retried" is checked by the server, not by the library's own counters.
 
-See [CHANGELOG.md](CHANGELOG.md) for the bugs fixed in 0.2.0. Each fix comes with a test that fails on 0.1.0.
+See [CHANGELOG.md](CHANGELOG.md) for the bugs fixed in 0.2.0 and 0.2.1. Each fix comes with a test that fails on the release before it.
+
+## How it was written
+
+I wrote it with Claude Code as a pair programmer, and every commit carries its co-author line. 0.1.0, 0.2.0 and 0.2.1 came out on the same day. Each release after the first fixes bugs found by reviewing the one before.
 
 ## License
 

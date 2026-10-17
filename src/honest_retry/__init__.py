@@ -36,7 +36,7 @@ from typing import Any, Callable, Literal
 import httpx
 
 __all__ = ["send", "Result", "IDEMPOTENT_METHODS"]
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 Outcome = Literal["done", "not_sent", "rejected", "unconfirmed"]
 
@@ -92,7 +92,7 @@ def _retry_after(response: httpx.Response | None) -> float | None:
     if not value:
         return None
     value = value.strip()
-    if value.isdigit():
+    if value.isascii() and value.isdigit():  # "²".isdigit() is True too
         return float(value)
     try:
         when = email.utils.parsedate_to_datetime(value)
@@ -101,6 +101,25 @@ def _retry_after(response: httpx.Response | None) -> float | None:
     if when.tzinfo is None:
         when = when.replace(tzinfo=timezone.utc)
     return max(0.0, (when - datetime.now(timezone.utc)).total_seconds())
+
+
+def _one_shot_body(kwargs: dict) -> str | None:
+    """Name the argument whose body can be read only once, if any.
+
+    httpx reads an iterator, generator or file body as it sends it. A second
+    attempt finds it empty: a generator goes out as an empty chunked body, a
+    file fails halfway with too little data for its Content-Length.
+    """
+    content = kwargs.get("content")
+    if content is not None and not isinstance(content, (bytes, bytearray, memoryview, str)):
+        return "content"
+    files = kwargs.get("files") or {}
+    for value in files.values() if isinstance(files, dict) else (v for _, v in files):
+        file = value[1] if isinstance(value, tuple) else value
+        seekable = getattr(file, "seekable", None)
+        if hasattr(file, "read") and not (seekable and seekable()):
+            return "files"  # httpx rewinds seekable files itself
+    return None
 
 
 def send(
@@ -130,6 +149,12 @@ def send(
     """
     if attempts < 1:
         raise ValueError("attempts must be at least 1")
+    one_shot = _one_shot_body(kwargs)
+    if one_shot and attempts > 1:
+        raise TypeError(
+            f"{one_shot}= can be sent only once, so it cannot be retried: "
+            "pass the body as bytes, or use attempts=1"
+        )
     method = method.upper()
     headers = httpx.Headers(kwargs.pop("headers", None))
     if idempotency_key and "Idempotency-Key" not in headers:
